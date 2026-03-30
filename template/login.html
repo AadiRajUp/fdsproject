@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Login | Productivity Tracker{% endblock %}
+
+{% block content %}
+<section class="card auth-card">
+    <h1>Welcome Back</h1>
+    <p class="subtext">Login</p>
+
+    {% if success %}
+    <p class="auth-message success">{{ success }}</p>
+    {% endif %}
+    {% if error %}
+    <p class="auth-message error">{{ error }}</p>
+    {% endif %}
+
+    <form class="form" method="post" action="{{ url_for('login') }}">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="you@example.com" value="{{ email|default('') }}" required>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="••••••••" required>
+
+        <button type="submit" class="btn">Login</button>
+    </form>
+
+    <p class="auth-meta">New here? <a class="text-link" href="{{ url_for('signup') }}">Create an account</a></p>
+</section>
+{% endblock %}

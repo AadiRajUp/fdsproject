@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="shortcut icon" href="{{url_for('static', filename='images/fsulogo.jpg')}}" type="image/x-icon">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Tables</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        body {
+            background-color: #EDEDED;
+            padding: 20px;
+        }
+
+        .navbar {
+            background-color: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar h1 {
+            color: #333;
+        }
+
+        .back-btn {
+            background-color: #27ae60;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background-color 0.2s ease;
+        }
+
+        .back-btn:hover {
+            background-color: #1e8449;
+        }
+
+        .table-container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .table-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #27ae60;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #27ae60;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th {
+            background-color: #f5f5f5;
+            color: #333;
+            font-weight: 600;
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #ddd;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #eee;
+            color: #555;
+        }
+
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        .empty-message {
+            text-align: center;
+            color: #999;
+            padding: 20px;
+            font-style: italic;
+        }
+
+        .row-count {
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+            text-align: right;
+        }
+
+        .sql-executor {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .sql-executor textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: vertical;
+            margin-bottom: 10px;
+        }
+
+        .sql-executor textarea:focus {
+            outline: none;
+            border-color: #27ae60;
+        }
+
+        .execute-btn {
+            background-color: #27ae60;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background-color 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .execute-btn:hover {
+            background-color: #1e8449;
+        }
+
+        .execute-btn:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        .sql-result {
+            margin-top: 20px;
+        }
+
+        .error-message {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 4px;
+            border-left: 4px solid #c62828;
+            margin-top: 10px;
+        }
+
+        .success-message {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            padding: 12px;
+            border-radius: 4px;
+            border-left: 4px solid #2e7d32;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1><i class="fas fa-database"></i> Database Tables</h1>
+        <a href="{{ url_for('dashboard') }}" class="back-btn">
+            <i class="fas fa-arrow-left"></i> Back to Tasks
+        </a>
+    </div>
+
+    <div class="sql-executor">
+        <div class="table-title">
+            <i class="fas fa-terminal"></i> SQL Query Executor
+        </div>
+        <textarea id="sqlQuery" placeholder="Enter your SQL query here...&#10;Example: SELECT * FROM task_table WHERE task_assigned_to = 'username';"></textarea>
+        <button class="execute-btn" onclick="executeSQL()">
+            <i class="fas fa-play"></i> Execute Query
+        </button>
+        <div id="sqlResult" class="sql-result"></div>
+    </div>
+
+    {% for table_name, table_info in tables_data.items() %}
+    <div class="table-container">
+        <div class="table-title">
+            <i class="fas fa-table"></i> {{ table_name }}
+        </div>
+        
+        {% if table_info.rows %}
+        <table>
+            <thead>
+                <tr>
+                    {% for column in table_info.columns %}
+                    <th>{{ column }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_info.rows %}
+                <tr>
+                    {% for cell in row %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="row-count">Total rows: {{ table_info.rows|length }}</div>
+        {% else %}
+        <div class="empty-message">No data in this table</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    {% if not tables_data %}
+    <div class="table-container">
+        <div class="empty-message">No tables found in the database</div>
+    </div>
+    {% endif %}
+
+    <script>
+        async function executeSQL() {
+            const query = document.getElementById('sqlQuery').value.trim();
+            const resultDiv = document.getElementById('sqlResult');
+            const executeBtn = document.querySelector('.execute-btn');
+            
+            if (!query) {
+                resultDiv.innerHTML = '<div class="error-message">Please enter a SQL query</div>';
+                return;
+            }
+            
+            executeBtn.disabled = true;
+            executeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Executing...';
+            
+            try {
+                const response = await fetch('{{url_for("tables.execute_sql")}}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: query })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (data.columns && data.rows) {
+                        // SELECT query result
+                        let html = '<div class="table-container"><div class="table-title">Query Result</div>';
+                        html += '<table><thead><tr>';
+                        data.columns.forEach(col => {
+                            html += `<th>${col}</th>`;
+                        });
+                        html += '</tr></thead><tbody>';
+                        data.rows.forEach(row => {
+                            html += '<tr>';
+                            row.forEach(cell => {
+                                html += `<td>${cell !== null ? cell : 'NULL'}</td>`;
+                            });
+                            html += '</tr>';
+                        });
+                        html += '</tbody></table>';
+                        html += `<div class="row-count">Total rows: ${data.row_count}</div></div>`;
+                        resultDiv.innerHTML = html;
+                    } else {
+                        // Non-SELECT query result
+                        resultDiv.innerHTML = `<div class="success-message">${data.message}</div>`;
+                    }
+                } else {
+                    resultDiv.innerHTML = `<div class="error-message"><strong>Error:</strong> ${data.error}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error-message"><strong>Error:</strong> ${error.message}</div>`;
+            } finally {
+                executeBtn.disabled = false;
+                executeBtn.innerHTML = '<i class="fas fa-play"></i> Execute Query';
+            }
+        }
+        
+        // Allow Ctrl+Enter to execute query
+        document.getElementById('sqlQuery').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                executeSQL();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard | Productivity Tracker{% endblock %}
+
+{% block content %}
+<section class="score-banner card">
+    <div>
+        <p class="score-label">Your Productivity Score</p>
+        <h1>{{ score }}</h1>
+    </div>
+    <p class="subtext">Keep logging data from Today's Data to improve consistency.</p>
+</section>
+
+<section class="graphs-section">
+    <h2>Productivity Insights</h2>
+    <div class="graph-grid">
+        <div class="graph-card card">
+            <h3>Daily Score Trend</h3>
+            <div class="graph-placeholder">Graph Placeholder 1</div>
+        </div>
+        <div class="graph-card card">
+            <h3>Focus vs Output</h3>
+            <div class="graph-placeholder">Graph Placeholder 2</div>
+        </div>
+        <div class="graph-card card">
+            <h3>Tasks Completed Over Time</h3>
+            <div class="graph-placeholder">Graph Placeholder 3</div>
+        </div>
+        <div class="graph-card card">
+            <h3>Weekly Consistency</h3>
+            <div class="graph-placeholder">Graph Placeholder 4</div>
+        </div>
+    </div>
+</section>
+{% endblock %}

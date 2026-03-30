@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>{% block title %}Productivity Tracker{% endblock %}</title>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="brand">Productivity Tracker</div>
+        <div class="nav-links">
+            {% if logged_in %}
+            <a href="{{ url_for('today_data') }}" class="nav-link {% if active_page == 'today-data' %}active{% endif %}">Today's Data</a>
+            <a href="{{ url_for('dashboard') }}" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+            <a href="{{ url_for('logout') }}" class="nav-link">Logout</a>
+            {% else %}
+            <a href="{{ url_for('login') }}" class="nav-link {% if active_page == 'login' %}active{% endif %}">Login</a>
+            <a href="{{ url_for('signup') }}" class="nav-link {% if active_page == 'signup' %}active{% endif %}">Signup</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
