@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from flask import Flask, redirect, render_template, request, session, url_for
 from tables import tables_bp
+from model.predict_model import model_predict
 
 app = Flask(__name__, template_folder="template")
 app.secret_key = "simple-dev-secret-key"
@@ -142,7 +143,6 @@ def init_db():
 				conn.execute("DROP TABLE daily_productivity_old")
 
 
-init_db()
 
 
 def login_required(view_function):
@@ -293,12 +293,9 @@ def today_data():
 			error="Study/sleep/phone hours must be non-negative, and focus score must be 0-100.",
 		)
 
-	study_weight = 11.812612
-	focus_weight = 6.597617
-	sleep_weight = 5.476603
-	phone_weight = -5.393503
-	intercept = 50.146637
-
+	input_values =[study_hours,focus_score,study_hours,phone_usage_hours]
+	score = model_predict(input_values)
+	"""
 	raw_score = (
 		intercept
 		+ study_weight * study_hours
@@ -309,7 +306,7 @@ def today_data():
 
 	score = 100 / (1 + exp(-(raw_score - 550) / 100))
 	score = max(0, min(100, score))
-
+	"""
 	with sqlite3.connect(DATABASE_PATH) as conn:
 		conn.execute(
 			"""
