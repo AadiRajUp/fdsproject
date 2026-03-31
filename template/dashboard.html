@@ -1,39 +1,354 @@
 {% extends "base.html" %}
-
 {% block title %}Dashboard | Productivity Tracker{% endblock %}
-
 {% block content %}
-<section class="score-banner card">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<style>
+  .score-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 32px;
+    margin-bottom: 24px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-left: 5px solid #27ae60;
+  }
+  .score-banner h1 {
+    font-size: 48px;
+    color: #27ae60;
+    margin: 0;
+  }
+  .score-label {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 4px;
+  }
+  .subtext {
+    font-size: 14px;
+    color: #666;
+    max-width: 400px;
+    text-align: right;
+  }
+  .graphs-section h2 {
+    font-size: 22px;
+    color: #333;
+    margin-bottom: 16px;
+  }
+  .graph-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .graph-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .graph-card h3 {
+    font-size: 16px;
+    color: #333;
+    margin-bottom: 6px;
+  }
+  .graph-meta {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 12px;
+  }
+  .span-2 { grid-column: span 2; }
+  @media (max-width: 768px) {
+    .graph-grid { grid-template-columns: 1fr; }
+    .span-2 { grid-column: span 1; }
+    .score-banner { flex-direction: column; gap: 12px; }
+    .subtext { text-align: left; }
+  }
+</style>
+
+<!-- Score Banner -->
+<section class="score-banner">
     <div>
         <p class="score-label">Your Productivity Score</p>
-        <h1>{{ score }}</h1>
+        <h1>{{ score if score is not none else "—" }}</h1>
     </div>
     {% if top_percent is not none %}
-    <p class="subtext">You are in the top {{ top_percent }}% productive users today ({{ today_total_users }} users logged data).</p>
+    <p class="subtext">You are in the top <strong>{{ top_percent }}%</strong> productive users today ({{ today_total_users }} users logged data).</p>
     {% else %}
     <p class="subtext">Log your today's data to see your percentile rank.</p>
     {% endif %}
 </section>
 
+<!-- Graphs -->
 <section class="graphs-section">
     <h2>Productivity Insights</h2>
     <div class="graph-grid">
-        <div class="graph-card card">
+
+        <!-- Graph 1: Bell Curve -->
+        <div class="graph-card span-2">
+            <h3>Productivity Distribution — All Users</h3>
+            <p class="graph-meta">
+                Mean: <strong>{{ bell_mean }}</strong> &nbsp;|&nbsp;
+                Std Dev: <strong>{{ bell_sigma }}</strong> &nbsp;|&nbsp;
+                {% if user_score is not none %}
+                Your score today: <strong style="color:#e74c3c">{{ user_score | round(1) }}</strong>
+                {% else %}
+                <em>Log today's data to see your position on the curve</em>
+                {% endif %}
+            </p>
+            <canvas id="bellCurveChart" height="80"></canvas>
+        </div>
+
+        <!-- Graph 2: Daily Score Trend -->
+        <div class="graph-card span-2">
             <h3>Daily Score Trend</h3>
-            <div class="graph-placeholder">Graph Placeholder 1</div>
+            <p class="graph-meta">Your productivity score over the last 30 days with trend line</p>
+            <canvas id="dailyScoreChart" height="80"></canvas>
         </div>
-        <div class="graph-card card">
-            <h3>Focus vs Output</h3>
-            <div class="graph-placeholder">Graph Placeholder 2</div>
+
+        <!-- Graph 3: Weekly Average -->
+        <div class="graph-card">
+            <h3>Weekly Average Score</h3>
+            <p class="graph-meta">Your average productivity score per week</p>
+            <canvas id="weeklyChart" height="140"></canvas>
         </div>
-        <div class="graph-card card">
-            <h3>Tasks Completed Over Time</h3>
-            <div class="graph-placeholder">Graph Placeholder 3</div>
+
+        <!-- Graph 4: Feature Breakdown -->
+        <div class="graph-card">
+            <h3>Daily Habits Breakdown</h3>
+            <p class="graph-meta">Study hours, focus score, sleep & phone usage over last 14 days</p>
+            <canvas id="featureChart" height="140"></canvas>
         </div>
-        <div class="graph-card card">
-            <h3>Weekly Consistency</h3>
-            <div class="graph-placeholder">Graph Placeholder 4</div>
-        </div>
+
     </div>
 </section>
+
+<script>
+const bellX     = {{ bell_x     | tojson }};
+const bellY     = {{ bell_y     | tojson }};
+const userScore = {{ user_score | tojson }};
+const bellMean  = {{ bell_mean  }};
+const bellSigma = {{ bell_sigma }};
+const dates     = {{ dates      | tojson }};
+const scores    = {{ scores     | tojson }};
+const trendLine = {{ trend_line | tojson }};
+const weekLabels= {{ week_labels| tojson }};
+const weekScores= {{ week_scores| tojson }};
+const weekStudy = {{ week_study | tojson }};
+const weekFocus = {{ week_focus | tojson }};
+const featDates = {{ feat_dates | tojson }};
+const featStudy = {{ feat_study | tojson }};
+const featFocus = {{ feat_focus | tojson }};
+const featSleep = {{ feat_sleep | tojson }};
+const featPhone = {{ feat_phone | tojson }};
+
+// ── Graph 1: Bell Curve ───────────────────────────────────────
+const userLinePlugin = {
+    id: "userLine",
+    afterDraw(chart) {
+        if (userScore === null || userScore === undefined) return;
+        const ctx    = chart.ctx;
+        const xAxis  = chart.scales.x;
+        const yAxis  = chart.scales.y;
+        const xPixel = xAxis.getPixelForValue(userScore);
+        const yTop   = yAxis.getPixelForValue(yAxis.max);
+        const yBot   = yAxis.getPixelForValue(0);
+
+        ctx.save();
+        // Shaded area left of user line
+        const xStart = xAxis.getPixelForValue(xAxis.min);
+        ctx.fillStyle = "rgba(231,76,60,0.08)";
+        ctx.fillRect(xStart, yTop, xPixel - xStart, yBot - yTop);
+
+        // Vertical line
+        ctx.beginPath();
+        ctx.moveTo(xPixel, yBot);
+        ctx.lineTo(xPixel, yTop);
+        ctx.strokeStyle = "#e74c3c";
+        ctx.lineWidth   = 2;
+        ctx.setLineDash([6, 3]);
+        ctx.stroke();
+
+        // Label
+        ctx.setLineDash([]);
+        ctx.fillStyle    = "#e74c3c";
+        ctx.font         = "bold 12px Arial";
+        ctx.textAlign    = "center";
+        ctx.fillText("You (" + userScore.toFixed(1) + ")", xPixel, yTop - 10);
+        ctx.restore();
+    }
+};
+
+new Chart(document.getElementById("bellCurveChart"), {
+    type: "line",
+    data: {
+        labels: bellX,
+        datasets: [{
+            label: "Users",
+            data: bellY,
+            borderColor: "#27ae60",
+            backgroundColor: "rgba(39,174,96,0.12)",
+            borderWidth: 2.5,
+            pointRadius: 0,
+            fill: true,
+            tension: 0.4,
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    title: (i) => "Score: " + parseFloat(i[0].label).toFixed(1),
+                    label: (i) => "Density: " + i.raw.toFixed(5),
+                }
+            }
+        },
+        scales: {
+            x: {
+                type: "linear",
+                min: 0, max: 100,
+                title: { display: true, text: "Productivity Score" }
+            },
+            y: {
+                title: { display: true, text: "Density" },
+                ticks: { display: false }
+            }
+        }
+    },
+    plugins: [userLinePlugin]
+});
+
+// ── Graph 2: Daily Score Trend ────────────────────────────────
+new Chart(document.getElementById("dailyScoreChart"), {
+    type: "line",
+    data: {
+        labels: dates,
+        datasets: [
+            {
+                label: "Daily Score",
+                data: scores,
+                borderColor: "#27ae60",
+                backgroundColor: "rgba(39,174,96,0.1)",
+                borderWidth: 2,
+                tension: 0.4,
+                fill: true,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+            },
+            {
+                label: "Trend",
+                data: trendLine,
+                borderColor: "#e74c3c",
+                borderWidth: 2,
+                borderDash: [6, 3],
+                pointRadius: 0,
+                fill: false,
+                tension: 0,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: true } },
+        scales: {
+            y: { min: 0, max: 100, ticks: { stepSize: 20 } }
+        }
+    }
+});
+
+// ── Graph 3: Weekly Average ───────────────────────────────────
+new Chart(document.getElementById("weeklyChart"), {
+    type: "bar",
+    data: {
+        labels: weekLabels,
+        datasets: [
+            {
+                label: "Avg Score",
+                data: weekScores,
+                backgroundColor: "rgba(39,174,96,0.75)",
+                borderRadius: 6,
+                yAxisID: "y",
+            },
+            {
+                label: "Avg Study Hrs",
+                data: weekStudy,
+                backgroundColor: "rgba(52,152,219,0.75)",
+                borderRadius: 6,
+                yAxisID: "y1",
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: true } },
+        scales: {
+            y:  { min: 0, max: 100, title: { display: true, text: "Score" } },
+            y1: { min: 0, max: 12,  title: { display: true, text: "Hours" },
+                  position: "right", grid: { drawOnChartArea: false } }
+        }
+    }
+});
+
+// ── Graph 4: Feature Breakdown ────────────────────────────────
+new Chart(document.getElementById("featureChart"), {
+    type: "line",
+    data: {
+        labels: featDates,
+        datasets: [
+            {
+                label: "Study Hrs",
+                data: featStudy,
+                borderColor: "#3498db",
+                backgroundColor: "transparent",
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.3,
+                yAxisID: "y1",
+            },
+            {
+                label: "Sleep Hrs",
+                data: featSleep,
+                borderColor: "#9b59b6",
+                backgroundColor: "transparent",
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.3,
+                yAxisID: "y1",
+            },
+            {
+                label: "Phone Hrs",
+                data: featPhone,
+                borderColor: "#e74c3c",
+                backgroundColor: "transparent",
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.3,
+                yAxisID: "y1",
+            },
+            {
+                label: "Focus Score",
+                data: featFocus,
+                borderColor: "#f39c12",
+                backgroundColor: "transparent",
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.3,
+                yAxisID: "y",
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: true } },
+        scales: {
+            y:  { min: 0, max: 100, title: { display: true, text: "Focus Score" } },
+            y1: { min: 0, max: 12,  title: { display: true, text: "Hours" },
+                  position: "right", grid: { drawOnChartArea: false } }
+        }
+    }
+});
+</script>
 {% endblock %}
