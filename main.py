@@ -1,4 +1,5 @@
 import sqlite3
+import numpy as np
 from math import exp
 from datetime import datetime
 from functools import wraps
@@ -7,6 +8,7 @@ from uuid import uuid4
 
 from flask import Flask, redirect, render_template, request, session, url_for
 from tables import tables_bp
+from model.predict_model import model_predict
 
 app = Flask(__name__, template_folder="template")
 app.secret_key = "simple-dev-secret-key"
@@ -141,7 +143,6 @@ def init_db():
 				conn.execute("DROP TABLE daily_productivity_old")
 
 
-init_db()
 
 
 def login_required(view_function):
@@ -292,12 +293,9 @@ def today_data():
 			error="Study/sleep/phone hours must be non-negative, and focus score must be 0-100.",
 		)
 
-	study_weight = 11.812612
-	focus_weight = 6.597617
-	sleep_weight = 5.476603
-	phone_weight = -5.393503
-	intercept = 50.146637
-
+	input_values =[study_hours,focus_score,study_hours,phone_usage_hours]
+	score = model_predict(input_values)
+	"""
 	raw_score = (
 		intercept
 		+ study_weight * study_hours
@@ -306,10 +304,9 @@ def today_data():
 		+ phone_weight * phone_usage_hours
 	)
 
-	# Compress raw model output so 100 remains an extreme value rather than a common clamp.
 	score = 100 / (1 + exp(-(raw_score - 550) / 100))
 	score = max(0, min(100, score))
-
+	"""
 	with sqlite3.connect(DATABASE_PATH) as conn:
 		conn.execute(
 			"""
@@ -347,70 +344,161 @@ def today_data():
 @app.get("/dashboard")
 @login_required
 def dashboard():
-	score = request.args.get("score", type=float)
-	top_percent = None
+	score             = request.args.get("score", type=float)
+	top_percent       = None
 	today_total_users = 0
-	today_date = datetime.now().date().isoformat()
+	today_date        = datetime.now().date().isoformat()
 
-	if score is None:
-		with sqlite3.connect(DATABASE_PATH) as conn:
-			latest_entry = conn.execute(
+	with sqlite3.connect(DATABASE_PATH) as conn:
+
+		# latest score
+		if score is None:
+			latest = conn.execute(
 				"""
-				SELECT score
-				FROM daily_productivity
+				SELECT score FROM daily_productivity
 				WHERE user_id = ?
-				ORDER BY activity_date DESC
-				LIMIT 1
+				ORDER BY activity_date DESC LIMIT 1
 				""",
 				(session["user_id"],),
 			).fetchone()
-		score = latest_entry[0] if latest_entry else 78.0
+			score = latest[0] if latest else None
 
-	with sqlite3.connect(DATABASE_PATH) as conn:
+		# today's percentile
 		today_row = conn.execute(
 			"""
-			SELECT score
-			FROM daily_productivity
-			WHERE user_id = ? AND activity_date = ?
-			LIMIT 1
+			SELECT score FROM daily_productivity
+			WHERE user_id = ? AND activity_date = ? LIMIT 1
 			""",
 			(session["user_id"], today_date),
 		).fetchone()
 
+		today_score = None
 		if today_row:
-			today_score = today_row[0]
+			today_score       = today_row[0]
 			today_total_users = conn.execute(
-				"""
-				SELECT COUNT(*)
-				FROM daily_productivity
-				WHERE activity_date = ?
-				""",
+				"SELECT COUNT(*) FROM daily_productivity WHERE activity_date = ?",
 				(today_date,),
 			).fetchone()[0]
-
-			higher_scores_count = conn.execute(
-				"""
-				SELECT COUNT(*)
-				FROM daily_productivity
-				WHERE activity_date = ? AND score > ?
-				""",
+			higher = conn.execute(
+				"SELECT COUNT(*) FROM daily_productivity WHERE activity_date = ? AND score > ?",
 				(today_date, today_score),
 			).fetchone()[0]
+			rank        = higher + 1
+			top_percent = 1.0 if today_total_users <= 1 else round((rank / today_total_users) * 100, 1)
 
-			rank = higher_scores_count + 1
-			if today_total_users <= 1:
-				top_percent = 1.0
-			else:
-				top_percent = round((rank / today_total_users) * 100, 1)
+		# Graph 1: Bell curve
+		all_scores = conn.execute(
+			"SELECT score FROM daily_productivity WHERE activity_date = ?",
+			(today_date,),
+		).fetchall()
+		if len(all_scores) < 5:
+			all_scores = conn.execute(
+				"SELECT score FROM daily_productivity"
+			).fetchall()
 
-	display_score = round(score, 1)
+		# Graph 2: Daily trend
+		daily_rows = conn.execute(
+			"""
+			SELECT activity_date, score FROM daily_productivity
+			WHERE user_id = ?
+			ORDER BY activity_date ASC LIMIT 30
+			""",
+			(session["user_id"],),
+		).fetchall()
+
+		# Graph 3: Weekly average
+		weekly_rows = conn.execute(
+			"""
+			SELECT
+				strftime('%W', activity_date) as week_num,
+				MIN(activity_date)            as week_start,
+				ROUND(AVG(score), 2)          as avg_score,
+				ROUND(AVG(study_hours), 2)    as avg_study,
+				ROUND(AVG(focus_score), 2)    as avg_focus
+			FROM daily_productivity
+			WHERE user_id = ?
+			GROUP BY week_num
+			ORDER BY week_num ASC
+			LIMIT 8
+			""",
+			(session["user_id"],),
+		).fetchall()
+
+		# Graph 4: Feature breakdown
+		feature_rows = conn.execute(
+			"""
+			SELECT activity_date, study_hours, focus_score,
+				   sleep_hours, phone_usage_hours
+			FROM daily_productivity
+			WHERE user_id = ?
+			ORDER BY activity_date ASC
+			LIMIT 14
+			""",
+			(session["user_id"],),
+		).fetchall()
+
+	# Bell curve computation
+	all_scores_arr = [r[0] for r in all_scores]
+	bell_x, bell_y = [], []
+
+	if len(all_scores_arr) >= 2:
+		mu    = float(np.mean(all_scores_arr))
+		sigma = float(np.std(all_scores_arr)) or 1.0
+		xs    = np.linspace(max(0, mu - 4*sigma), min(100, mu + 4*sigma), 200)
+		ys    = (1/(sigma * np.sqrt(2*np.pi))) * np.exp(-0.5*((xs - mu)/sigma)**2)
+		bell_x = [round(float(v), 3) for v in xs]
+		bell_y = [round(float(v), 6) for v in ys]
+	else:
+		mu, sigma = 50.0, 15.0
+
+	# Daily trend arrays
+	dates       = [r[0] for r in daily_rows]
+	scores_list = [round(r[1], 1) for r in daily_rows]
+
+	trend_line = []
+	if len(scores_list) > 1:
+		x          = np.arange(len(scores_list))
+		m, b       = np.polyfit(x, scores_list, 1)
+		trend_line = [round(float(m*i + b), 2) for i in x]
+	else:
+		trend_line = scores_list[:]
+
+	# Weekly arrays
+	week_labels = [r[1] for r in weekly_rows]
+	week_scores = [r[2] for r in weekly_rows]
+	week_study  = [r[3] for r in weekly_rows]
+	week_focus  = [r[4] for r in weekly_rows]
+
+	# Feature breakdown arrays
+	feat_dates  = [r[0] for r in feature_rows]
+	feat_study  = [r[1] for r in feature_rows]
+	feat_focus  = [r[2] for r in feature_rows]
+	feat_sleep  = [r[3] for r in feature_rows]
+	feat_phone  = [r[4] for r in feature_rows]
 
 	return render_template(
 		"dashboard.html",
-		active_page="dashboard",
-		score=display_score,
-		top_percent=top_percent,
-		today_total_users=today_total_users,
+		active_page       = "dashboard",
+		score             = round(score, 1) if score is not None else None,
+		top_percent       = top_percent,
+		today_total_users = today_total_users,
+		bell_x            = bell_x,
+		bell_y            = bell_y,
+		user_score        = today_score,
+		bell_mean         = round(mu, 2),
+		bell_sigma        = round(sigma, 2),
+		dates             = dates,
+		scores            = scores_list,
+		trend_line        = trend_line,
+		week_labels       = week_labels,
+		week_scores       = week_scores,
+		week_study        = week_study,
+		week_focus        = week_focus,
+		feat_dates        = feat_dates,
+		feat_study        = feat_study,
+		feat_focus        = feat_focus,
+		feat_sleep        = feat_sleep,
+		feat_phone        = feat_phone,
 	)
 
 
