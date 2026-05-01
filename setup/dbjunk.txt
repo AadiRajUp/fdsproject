@@ -1,0 +1,127 @@
+
+
+def create_daily_productivity_table(conn):
+	conn.execute(
+		"""
+		CREATE TABLE IF NOT EXISTS daily_productivity (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			activity_date DATE NOT NULL,
+			study_hours REAL NOT NULL,
+			focus_score INTEGER NOT NULL,
+			sleep_hours REAL NOT NULL,
+			phone_usage_hours REAL NOT NULL,
+			score REAL NOT NULL,
+			UNIQUE(user_id, activity_date),
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)
+		"""
+	)
+
+
+def init_db():
+	with sqlite3.connect(DATABASE_PATH) as conn:
+		conn.execute(
+			"""
+			CREATE TABLE IF NOT EXISTS users (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				uid TEXT UNIQUE,
+				full_name TEXT NOT NULL,
+				email TEXT NOT NULL UNIQUE,
+				password TEXT NOT NULL,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			)
+			"""
+		)
+
+		columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+		if "uid" not in columns:
+			conn.execute("ALTER TABLE users ADD COLUMN uid TEXT")
+
+		users_missing_uid = conn.execute(
+			"SELECT id FROM users WHERE uid IS NULL OR TRIM(uid) = ''"
+		).fetchall()
+		for user in users_missing_uid:
+			conn.execute(
+				"UPDATE users SET uid = ? WHERE id = ?",
+				(f"USR-{uuid4().hex[:12].upper()}", user[0]),
+			)
+
+		conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_uid ON users(uid)")
+
+		daily_column_rows = conn.execute("PRAGMA table_info(daily_productivity)").fetchall()
+		if not daily_column_rows:
+			create_daily_productivity_table(conn)
+		else:
+			daily_columns = {row[1] for row in daily_column_rows}
+			daily_column_types = {row[1]: (row[2] or "").upper() for row in daily_column_rows}
+			expected_columns = {
+				"id",
+				"user_id",
+				"activity_date",
+				"study_hours",
+				"focus_score",
+				"sleep_hours",
+				"phone_usage_hours",
+				"score",
+			}
+			legacy_columns = {"hours_worked", "tasks_completed", "focus_level", "notes"}
+			score_type_is_real = daily_column_types.get("score") == "REAL"
+
+			if daily_columns != expected_columns or (daily_columns & legacy_columns) or not score_type_is_real:
+				conn.execute("ALTER TABLE daily_productivity RENAME TO daily_productivity_old")
+				create_daily_productivity_table(conn)
+
+				old_cursor = conn.execute("SELECT * FROM daily_productivity_old")
+				old_columns = [description[0] for description in old_cursor.description]
+				for row in old_cursor.fetchall():
+					row_data = dict(zip(old_columns, row))
+					user_id = row_data.get("user_id")
+					if user_id is None:
+						continue
+
+					study_hours = row_data.get("study_hours")
+					if study_hours is None:
+						study_hours = row_data.get("hours_worked") or 0
+
+					focus_score = row_data.get("focus_score")
+					if focus_score is None:
+						focus_level = row_data.get("focus_level")
+						focus_score = int((focus_level or 0) * 10)
+
+					sleep_hours = row_data.get("sleep_hours") or 0
+					phone_usage_hours = row_data.get("phone_usage_hours") or 0
+					score = row_data.get("score") or 0
+					activity_date = row_data.get("activity_date") or datetime.now().date().isoformat()
+
+					conn.execute(
+						"""
+						INSERT INTO daily_productivity (
+							user_id,
+							activity_date,
+							study_hours,
+							focus_score,
+							sleep_hours,
+							phone_usage_hours,
+							score
+						) VALUES (?, ?, ?, ?, ?, ?, ?)
+						ON CONFLICT(user_id, activity_date)
+						DO UPDATE SET
+							study_hours = excluded.study_hours,
+							focus_score = excluded.focus_score,
+							sleep_hours = excluded.sleep_hours,
+							phone_usage_hours = excluded.phone_usage_hours,
+							score = excluded.score
+						""",
+						(
+							user_id,
+							activity_date,
+							study_hours,
+							focus_score,
+							sleep_hours,
+							phone_usage_hours,
+							score,
+						),
+					)
+
+				conn.execute("DROP TABLE daily_productivity_old")

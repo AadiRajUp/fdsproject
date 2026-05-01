@@ -8,17 +8,9 @@ tables_bp = Blueprint("tables", __name__)
 DATABASE_PATH = Path(__file__).with_name("users.db")
 
 
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if "user_id" not in session:
-            return redirect(url_for("login"))
-        return f(*args, **kwargs)
-    return decorated
 
 
 @tables_bp.get("/tables")
-@login_required
 def tables():
     tables_data = {}
     with sqlite3.connect(DATABASE_PATH) as conn:
@@ -40,7 +32,6 @@ def tables():
 
 
 @tables_bp.post("/execute-sql")
-@login_required
 def execute_sql():
     data = request.get_json()
     query = data.get("query", "").strip()
