@@ -36,7 +36,7 @@ def tables():
                 "rows": rows
             }
 
-    return render_template("table.html", tables_data=tables_data, active_page="tables")
+    return render_template("tables.html", tables_data=tables_data, active_page="tables")
 
 
 @tables_bp.post("/execute-sql")

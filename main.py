@@ -438,7 +438,12 @@ def dashboard():
 		).fetchall()
 
 	# Bell curve computation
-	all_scores_arr = [r[0] for r in all_scores]
+	all_scores_arr = []
+	for row in all_scores:
+		try:
+			all_scores_arr.append(float(row[0]))
+		except (TypeError, ValueError):
+			continue
 	bell_x, bell_y = [], []
 
 	if len(all_scores_arr) >= 2:
